@@ -3,8 +3,18 @@
 #include <complex>
 #include <vector>
 #include "real_iir_whitening.h"
+#include "four_stage_nonlinear_whitening.h"
 
-class TwoStageComplexIIR
+class IIRFilterBase
+{
+private:
+public:
+	virtual void SetCoeffs(const std::vector<float>& coeffs) = 0;
+	virtual void GetCoeffs(std::vector<float>& coeffs) = 0;
+	virtual float GetMagResp(float freqhz, float sampleRate = 48000) = 0;
+};
+
+class TwoStageComplexIIR :public IIRFilterBase
 {
 private:
 	float gain = 1;
@@ -47,7 +57,7 @@ public:
 	}
 };
 
-class FourStageRealIIR
+class FourStageRealIIR :public IIRFilterBase
 {
 private:
 	float b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, a1 = 0, a2 = 0, a3 = 0, a4 = 0;
@@ -79,7 +89,7 @@ public:
 	}
 };
 
-class TwoStageCosIIR
+class TwoStageCosIIR :public IIRFilterBase
 {
 private:
 	float gain = 1.0f;
@@ -176,7 +186,7 @@ public:
 		outIIR.SetCoeffs(coeffs);
 	}
 
-	float GetMagResp(float freqhz, float sampleRate = 48000.0f) const
+	float GetMagResp(float freqhz, float sampleRate = 48000.0f)
 	{
 		const float w = 2.0f * kPI * freqhz / sampleRate;
 		const float c1 = std::cos(w);
@@ -209,7 +219,7 @@ public:
 		return std::sqrt(std::max(num2 / std::max(den2, 1.0e-30f), 1.0e-30f));
 	}
 };
-class FourStageWhiteningIIR
+class FourStageWhiteningIIR :public IIRFilterBase
 {
 private:
 	FourStageRealIIR realIIR;
@@ -347,7 +357,97 @@ public:
 			realOut[i] = (float)(a[i] + kWhitenMu[i]);
 	}
 };
+class FourStageNonlinearWhiteningIIR :public IIRFilterBase
+{
+private:
+	static constexpr int kDim = 9;
 
+	FourStageRealIIR realIIR;
+
+	std::vector<float> vCoeffs;   // 非线性 whitening 空间
+	std::vector<float> aCoeffs;   // 真实4阶实系数空间 [b0..b4, a1..a4]
+
+	void UpdateRealFromV()
+	{
+		vCoeffs.resize(kDim, 0.0f);
+		FourStageNonlinearWhitening::ForwardVToA(vCoeffs, aCoeffs);
+		aCoeffs.resize(kDim, 0.0f);
+		realIIR.SetCoeffs(aCoeffs);
+	}
+
+	void UpdateVFromReal()
+	{
+		aCoeffs.resize(kDim, 0.0f);
+		realIIR.SetCoeffs(aCoeffs);
+		FourStageNonlinearWhitening::InverseAToV(aCoeffs, vCoeffs);
+		vCoeffs.resize(kDim, 0.0f);
+	}
+
+public:
+	FourStageNonlinearWhiteningIIR()
+	{
+		vCoeffs.assign(kDim, 0.0f);
+		aCoeffs.assign(kDim, 0.0f);
+		UpdateRealFromV();
+	}
+
+	// ============================================================
+	// 与你原来的接口风格保持一致：
+	// SetCoeffs / GetCoeffs 默认操作的是 whitening 空间
+	// ============================================================
+
+	void SetCoeffs(const std::vector<float>& coeffs)
+	{
+		vCoeffs = coeffs;
+		vCoeffs.resize(kDim, 0.0f);
+		UpdateRealFromV();
+	}
+
+	void GetCoeffs(std::vector<float>& coeffs)
+	{
+		coeffs = vCoeffs;
+	}
+
+	// ============================================================
+	// 调试/导出用：直接访问 real IIR coeffs
+	// ============================================================
+
+	void SetRealCoeffs(const std::vector<float>& coeffs)
+	{
+		aCoeffs = coeffs;
+		aCoeffs.resize(kDim, 0.0f);
+		realIIR.SetCoeffs(aCoeffs);
+		UpdateVFromReal();
+	}
+
+	void GetRealCoeffs(std::vector<float>& coeffs) const
+	{
+		coeffs = aCoeffs;
+	}
+
+	// ============================================================
+	// 频响
+	// ============================================================
+
+	float GetMagResp(float freqhz, float sampleRate = 48000.0f)
+	{
+		return realIIR.GetMagResp(freqhz, sampleRate);
+	}
+
+	// ============================================================
+	// 直接暴露静态变换，方便外部单独测试
+	// ============================================================
+
+	static void VToReal(const std::vector<float>& vin, std::vector<float>& aout)
+	{
+		FourStageNonlinearWhitening::ForwardVToA(vin, aout);
+	}
+
+	static void RealToV(const std::vector<float>& ain, std::vector<float>& vout)
+	{
+		FourStageNonlinearWhitening::InverseAToV(ain, vout);
+	}
+};
 
 ///////////////////////////////////////////////////////////////////////
 

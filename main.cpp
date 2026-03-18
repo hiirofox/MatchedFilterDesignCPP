@@ -10,14 +10,14 @@ class MatchedIIRDesign
 {
 private:
 	constexpr static float M_PI = 3.14159265358979323846f;
-	constexpr static int numPoints = 200;
+	constexpr static int numPoints = 500;
 
 	AdamOptimizer optAdam;
 	LbfgsOptimizer3 optLbfgs;
 	Optimizer optGrad;
 	OptimizerBase* optBase = &optAdam;
 
-	FourStageWhiteningIIR iir;
+	FourStageNonlinearWhiteningIIR iir;
 	AnalogPrototypeFilter prototype;
 
 	std::vector<float> coeffs;
@@ -29,7 +29,7 @@ private:
 		return a * b * (rand() % 2 ? 1.0f : -1.0f);
 	}
 
-	float spaceTransitionV = 0.99;
+	float spaceTransitionV = 0.2;
 	float TransitionSpace(float minv, float maxv, float normx) const
 	{
 		float logspace = std::exp(std::log(minv) + (std::log(maxv) - std::log(minv)) * normx);
@@ -54,7 +54,12 @@ private:
 			const float errDB = (magDB - magdBSpace[i]);
 			//if (magDB < -40 && errDB < -40) continue;
 			float e2 = errDB * errDB;
-			totalErrDB += fabsf(errDB);
+			float e1 = fabsf(errDB);
+			float ev = e1 * 0.01 + e2 * 0.99;
+			float freqk = freqSpace[i] / 48000.0 * 0.5 + 0.5;
+			float dbk = 1.0 / (30.1 + std::min(-30.0f, magdBSpace[i]));
+			//totalErrDB += ev * freqk * (0.2 + 0.8 * dbk);
+			totalErrDB += ev * freqk;
 		}
 		return totalErrDB;
 	}
@@ -73,19 +78,19 @@ public:
 		if (coeffs.size() < 9)
 			coeffs.resize(9);
 
-		coeffs[0] = std::fabs(randNormV());
-		coeffs[1] = std::fabs(randNormV());
-		coeffs[2] = randNormV() * M_PI;
-		coeffs[3] = std::fabs(randNormV());
-		coeffs[4] = randNormV() * M_PI;
-		coeffs[5] = std::fabs(randNormV());
-		coeffs[6] = randNormV() * M_PI;
-		coeffs[7] = std::fabs(randNormV());
-		coeffs[8] = randNormV() * M_PI;
+		coeffs[0] = randNormV();
+		coeffs[1] = randNormV();
+		coeffs[2] = randNormV();
+		coeffs[3] = randNormV();
+		coeffs[4] = randNormV();
+		coeffs[5] = randNormV();
+		coeffs[6] = randNormV();
+		coeffs[7] = randNormV();
+		coeffs[8] = randNormV();
 
-		optAdam.SetupOptimizer(9, coeffs, 0.9f);
-		optLbfgs.SetupOptimizer(9, coeffs, 0.001f);
-		optGrad.SetupOptimizer(9, coeffs, 0.000001f);
+		optAdam.SetupOptimizer(9, coeffs, 2);
+		optLbfgs.SetupOptimizer(9, coeffs, 0.01f);
+		optGrad.SetupOptimizer(9, coeffs, 0.00001f);
 		optAdam.SetErrorFunc([this](std::vector<float>& coeffs) { return Error(coeffs); });
 		optLbfgs.SetErrorFunc([this](std::vector<float>& coeffs) { return Error(coeffs); });
 		optGrad.SetErrorFunc([this](std::vector<float>& coeffs) { return Error(coeffs); });
@@ -118,16 +123,23 @@ public:
 		optBase->RunOptimizer(numCycles);
 
 		totalCycles += numCycles;
-		if (totalCycles > 300)
+		if (totalCycles > 380)
 		{
 			if (!isFirstTimeSwitch)
 			{
 				isFirstTimeSwitch = 1;
-				optAdam.GetBestVec(coeffs);
-				optLbfgs.SetBasin(coeffs);
+				optBase->GetBestVec(coeffs);
 				optBase = &optLbfgs;
+				optBase->SetBasin(coeffs);
 			}
 		}
+	}
+	void RunOptimizerDirect()
+	{
+		optAdam.RunOptimizer(500);
+		optAdam.GetBestVec(coeffs);
+		optLbfgs.SetBasin(coeffs);
+		optLbfgs.RunOptimizer(20);
 	}
 
 	void GetNowCoeffs(std::vector<float>& coeffs)
@@ -284,7 +296,7 @@ int main()
 	SetTargetFPS(60);
 
 	MatchedIIRDesign design;
-	design.SetupAnalogPrototype(AnalogFilterType::LP, 8000.0f, 1.0f, 15.0f, 3.0f);
+	design.SetupAnalogPrototype(AnalogFilterType::LP, 12000.0f, 15.07f, 15.0f, 1.0f);
 
 	std::vector<std::vector<float>> history;
 	int totalIterations = 0;
@@ -304,7 +316,7 @@ int main()
 
 	while (!WindowShouldClose())
 	{
-		int iterPerTime = 10;
+		int iterPerTime = 1;
 		design.RunOptimizer(iterPerTime);
 		totalIterations += iterPerTime;
 
