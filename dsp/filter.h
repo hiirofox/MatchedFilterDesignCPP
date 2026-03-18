@@ -570,3 +570,201 @@ public:
 		}
 	}
 };
+
+///////////////////////////////////////////////////////////////////////////////
+
+class MatchedIIRDesign
+{
+private:
+	constexpr static float M_PI = 3.14159265358979323846f;
+	constexpr static int numPoints = 100;
+
+	AdamOptimizer optAdam;
+	LbfgsOptimizer3 optLbfgs;
+	//Optimizer optGrad;
+	OptimizerBase* optBase = &optAdam;
+
+	//best coeffs:
+	//FourStageNonlinearWhiteningIIR	lr=2.0
+	//FourStageRealIIR					lr=0.04
+	//TwoStageComplexIIR				lr=0.5
+	//TwoStageCosIIR					lr=0.35
+	int selectIIRType = 0;
+	IIRFilterBase* iirs[4] = { new FourStageNonlinearWhiteningIIR,new FourStageRealIIR,new TwoStageComplexIIR,new TwoStageCosIIR };
+	float adamLearningRate[4] = { 2.0,0.01,0.25,0.350 };
+
+	IIRFilterBase* iir = iirs[selectIIRType];
+	AnalogPrototypeFilter prototype;
+
+	std::vector<float> coeffs;
+
+	float randNormV()
+	{
+		const float a = (float)rand() / (float)RAND_MAX;
+		const float b = (float)rand() / (float)RAND_MAX;
+		return a * b * (rand() % 2 ? 1.0f : -1.0f);
+	}
+
+	float spaceTransitionV = 0.5;
+	float TransitionSpace(float minv, float maxv, float normx) const
+	{
+		float logspace = std::exp(std::log(minv) + (std::log(maxv) - std::log(minv)) * normx);
+		float linspace = minv + (maxv - minv) * normx;
+		return linspace * (1.0 - spaceTransitionV) + logspace * spaceTransitionV;
+	}
+
+	float freqSpace[numPoints] = { 0 };
+	float magdBSpace[numPoints] = { 0 };
+	float magLinSpace[numPoints] = { 0 };
+	float meanTargetDB = 0.0f;
+
+	float Error(std::vector<float>& coeffs)
+	{
+		iir->SetCoeffs(coeffs);
+
+		float totalErrDB = 0.0f;
+		for (int i = 0; i < numPoints; ++i)
+		{
+			const float mag = iir->GetMagResp(freqSpace[i]);
+			const float magDB = 20.0f * std::log10(std::max(mag, 1.0e-30f));
+			const float errDB = (magDB - magdBSpace[i]);
+			//if (magDB < -40 && errDB < -40) continue;
+			float e2 = errDB * errDB;
+			float e1 = fabsf(errDB);
+			float ev = e1 * 0.001 + e2 * 0.999;
+			float freqk = freqSpace[i] / 48000.0 * 0.5 + 0.5;
+			float dbk = 1.0 / (30.1 + std::min(-30.0f, magdBSpace[i]));
+			//totalErrDB += ev * freqk * (0.2 + 0.8 * dbk);
+			totalErrDB += ev * freqk;
+		}
+		return totalErrDB;
+	}
+
+public:
+	MatchedIIRDesign(int iirtype = 2)
+	{
+		if (iirtype > 3)iirtype = 3;
+		if (iirtype < 0)iirtype = 0;
+
+		selectIIRType = iirtype;
+		iir = iirs[selectIIRType];
+		coeffs.resize(9);
+		Init();
+	}
+
+	void Init()
+	{
+		srand(31415926);
+
+		if (coeffs.size() < 9)
+			coeffs.resize(9);
+
+		coeffs[0] = randNormV();
+		coeffs[1] = randNormV();
+		coeffs[2] = randNormV();
+		coeffs[3] = randNormV();
+		coeffs[4] = randNormV();
+		coeffs[5] = randNormV();
+		coeffs[6] = randNormV();
+		coeffs[7] = randNormV();
+		coeffs[8] = randNormV();
+
+		optAdam.SetupOptimizer(9, coeffs, adamLearningRate[selectIIRType]);
+		optLbfgs.SetupOptimizer(9, coeffs, 0.01f);
+		//optGrad.SetupOptimizer(9, coeffs, 0.00001f);
+		optAdam.SetErrorFunc([this](std::vector<float>& coeffs) { return Error(coeffs); });
+		optLbfgs.SetErrorFunc([this](std::vector<float>& coeffs) { return Error(coeffs); });
+		//optGrad.SetErrorFunc([this](std::vector<float>& coeffs) { return Error(coeffs); });
+
+		for (int i = 0; i < numPoints; ++i)
+		{
+			freqSpace[i] = TransitionSpace(20.0f, 24000.0f, (float)i / (float)(numPoints - 1));
+		}
+	}
+
+	void SetupAnalogPrototype(AnalogFilterType type, float fc, float q, float gain, float stages)
+	{
+		Init();
+
+		for (int i = 0; i < numPoints; ++i)
+		{
+			const float freqhz = freqSpace[i];
+			const float mag = prototype.GetMapResp(type, freqhz, fc, q, gain, stages);
+			magLinSpace[i] = std::max(mag, 1.0e-30f);
+			magdBSpace[i] = 20.0f * std::log10(std::max(mag, 1.0e-30f));
+		}
+	}
+
+	int totalCycles = 0;
+	int isFirstTimeSwitch = 0;
+	void RunOptimizer(int numCycles)
+	{
+		if (totalCycles > 400)return;
+
+		optBase->RunOptimizer(numCycles);
+
+		totalCycles += numCycles;
+		if (totalCycles > 380)
+		{
+			if (!isFirstTimeSwitch)
+			{
+				isFirstTimeSwitch = 1;
+				optBase->GetBestVec(coeffs);
+				optBase = &optLbfgs;
+				optBase->SetBasin(coeffs);
+			}
+		}
+	}
+	void RunOptimizerDirect(int adamCycles = 500, int lbfgsCycles = 20)//建议用这个
+	{
+		optAdam.RunOptimizer(adamCycles);
+		optAdam.GetBestVec(coeffs);
+		optLbfgs.SetBasin(coeffs);
+		optLbfgs.RunOptimizer(lbfgsCycles);
+	}
+
+	void GetNowCoeffs(std::vector<float>& coeffs)
+	{
+		optBase->GetNowVec(coeffs);
+	}
+	void GetResponseDB(std::vector<float>& outMagDB, float sampleRate = 48000.0f)
+	{
+		std::vector<float> nowCoeffs;
+		optBase->GetNowVec(nowCoeffs);
+		iir->SetCoeffs(nowCoeffs);
+
+		outMagDB.resize(numPoints);
+		for (int i = 0; i < numPoints; ++i)
+		{
+			const float mag = iir->GetMagResp(freqSpace[i], sampleRate);
+			outMagDB[i] = 20.0f * std::log10(std::max(mag, 1.0e-30f));
+		}
+	}
+	void GetErrorCurveDB(std::vector<float>& outErrDB, int errMode, float sampleRate = 48000.0f)
+	{
+		std::vector<float> nowCoeffs;
+		optBase->GetNowVec(nowCoeffs);
+		iir->SetCoeffs(nowCoeffs);
+
+		outErrDB.resize(numPoints);
+		for (int i = 0; i < numPoints; ++i)
+		{
+			const float fitMag = std::max(iir->GetMagResp(freqSpace[i], sampleRate), 1.0e-30f);
+
+			if (errMode == 0)
+			{
+				const float fitDB = 20.0f * std::log10(fitMag);
+				outErrDB[i] = fitDB - magdBSpace[i];
+			}
+			else
+			{
+				const float ratio = fitMag / std::max(magLinSpace[i], 1.0e-30f);
+				outErrDB[i] = 20.0f * std::log10(std::max(ratio, 1.0e-30f));
+			}
+		}
+	}
+
+	const float* GetMagDBSpace() const { return magdBSpace; }
+	int GetNumPoints()const { return numPoints; }
+	float GetFreqAt(int i) const { return freqSpace[i]; }
+};
