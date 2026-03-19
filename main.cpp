@@ -133,7 +133,7 @@ int main1()
 	while (!WindowShouldClose())
 	{
 		int iterPerTime = 1;
-		design.RunOptimizer(iterPerTime);
+		design.RunOptimizer(iterPerTime, 800);
 		//design.RunOptimizerDirect();
 		totalIterations += iterPerTime;
 
@@ -362,13 +362,13 @@ int main2()
 	};
 
 	// 这里先固定一个相对难一点的目标，便于看出差异
-	const AnalogFilterType protoType = AnalogFilterType::LP;
+	const AnalogFilterType protoType = AnalogFilterType::HS;
 	const float fc = 12000.0f;
 	const float q = 10.07f;
 	const float gain = 15.0f;
 	const float stages = 3.0f;
 
-	const int maxIter = 400;
+	const int maxIter = 200;
 	const int sampleStep = 4;
 	const int numSamples = maxIter / sampleStep + 1;
 
@@ -390,7 +390,7 @@ int main2()
 				for (int iter = 0; iter <= maxIter; iter += sampleStep)
 				{
 					if (iter > 0)
-						design.RunOptimizer(sampleStep);
+						design.RunOptimizer(sampleStep, maxIter);
 
 					design.GetErrorCurveDB(err, 0);
 					results[t].convRMSE.push_back(ComputeRMSE(err));
@@ -590,9 +590,194 @@ int main2()
 	return 0;
 }
 
+std::vector<float> GenerateLogFC(float fcMin, float fcMax, int densityPerDecade)
+{
+	std::vector<float> fcList;
 
+	const float logMin = std::log10(fcMin);
+	const float logMax = std::log10(fcMax);
+	const float decades = logMax - logMin;
+
+	const int totalPoints = std::max(2, (int)(decades * densityPerDecade));
+
+	fcList.reserve(totalPoints);
+
+	for (int i = 0; i < totalPoints; ++i)
+	{
+		float t = (float)i / (float)(totalPoints - 1);
+		float logf = logMin + t * (logMax - logMin);
+		float fc = std::pow(10.0f, logf);
+		fcList.push_back(fc);
+	}
+
+	return fcList;
+}
+int main3_testfc()
+{
+	InitWindow(1600, 980, "IIR Parameter Space fc Sweep");
+	SetTargetFPS(60);
+
+	constexpr int numTypes = 4;
+	const char* typeNames[numTypes] =
+	{
+		"FourStageNonlinearWhiteningIIR",
+		"FourStageRealIIR",
+		"TwoStageComplexIIR",
+		"TwoStageCosIIR"
+	};
+
+	// ================================
+	// 这里改原型参数
+	// ================================
+	const AnalogFilterType protoType = AnalogFilterType::LP;
+	const float q = 10.07f;
+	const float gain = 15.0f;
+	const float stages = 3.0f;
+
+	const float fcMin = 20.0f;
+	const float fcMax = 48000.0f;
+	const int densityPerDecade = 12; // 推荐 8~20
+
+	const int adamCycles = 40;
+	const int lbfgsCycles = 160;
+
+	const float dbMin = -80.0f;
+	const float dbMax = 30.0f;
+
+	const float W = 1600.0f;
+	const float H = 980.0f;
+	const float margin = 20.0f;
+	const float gap = 16.0f;
+
+	const float panelW = (W - margin * 2.0f - gap) * 0.5f;
+	const float panelH = (H - margin * 2.0f - gap) * 0.5f;
+
+	struct SweepPanelResult
+	{
+		std::vector<std::vector<float>> fitRespDBList;
+		std::vector<std::vector<float>> targetRespDBList;
+		std::vector<float> fcList;
+	};
+
+	SweepPanelResult results[numTypes];
+
+	auto BuildFCCurve = [&](int typeIndex, SweepPanelResult& outRes)
+		{
+			auto fcList = GenerateLogFC(fcMin, fcMax, densityPerDecade);
+			for (float fc : fcList)
+			{
+				MatchedIIRDesign design(typeIndex);
+				design.SetupAnalogPrototype(protoType, fc, q, gain, stages);
+				design.RunOptimizerDirect(adamCycles, lbfgsCycles);
+
+				std::vector<float> fitResp;
+				design.GetResponseDB(fitResp);
+
+				std::vector<float> targetResp(design.GetNumPoints());
+				const float* src = design.GetMagDBSpace();
+				for (int i = 0; i < design.GetNumPoints(); ++i)
+					targetResp[i] = src[i];
+
+				outRes.fcList.push_back(fc);
+				outRes.fitRespDBList.push_back(std::move(fitResp));
+				outRes.targetRespDBList.push_back(std::move(targetResp));
+			}
+		};
+
+	for (int t = 0; t < numTypes; ++t)
+		BuildFCCurve(t, results[t]);
+
+	auto DrawRainbowSweepPanel =
+		[&](float x0, float y0, float x1, float y1, const char* title, const SweepPanelResult& panelRes, int typeIndex)
+		{
+			DrawPanelBox(x0, y0, x1, y1, title);
+
+			const float gx0 = x0 + 50.0f;
+			const float gy0 = y0 + 36.0f;
+			const float gx1 = x1 - 20.0f;
+			const float gy1 = y1 - 24.0f;
+
+			MatchedIIRDesign ref(typeIndex);
+			ref.SetupAnalogPrototype(protoType, 1000.0f, q, gain, stages);
+
+			DrawResponseGrid(gx0, gy0, gx1, gy1, dbMin, dbMax);
+
+			const int nCurves = (int)panelRes.fcList.size();
+			for (int i = 0; i < nCurves; ++i)
+			{
+				const float t = (nCurves > 1) ? ((float)i / (float)(nCurves - 1)) : 0.0f;
+				Color c = ColorFromHSV(270.0f * (1.0f - t), 1.0f, 1.0f);
+
+				// 底部灰色原型
+				DrawResponseCurve(
+					panelRes.targetRespDBList[i],
+					ref,
+					gx0, gy0, gx1, gy1,
+					dbMin, dbMax,
+					argb(0x50777777)
+				);
+
+				// 拟合结果彩色
+				DrawResponseCurve(
+					panelRes.fitRespDBList[i],
+					ref,
+					gx0, gy0, gx1, gy1,
+					dbMin, dbMax,
+					c
+				);
+			}
+
+			DrawText(
+				TextFormat("fc: %.0f -> %.0f (log, %d/decade)", fcMin, fcMax, densityPerDecade),
+				(int)gx0, (int)(y0 + 8), 16, argb(0xffb0b0b0));
+
+			DrawText(
+				TextFormat("Adam=%d  Lbfgs=%d", adamCycles, lbfgsCycles),
+				(int)(gx1 - 180), (int)(y0 + 8), 16, argb(0xffb0b0b0));
+		};
+
+	while (!WindowShouldClose())
+	{
+		BeginDrawing();
+		ClearBackground(argb(0xff000000));
+
+		const float p00x0 = margin;
+		const float p00y0 = margin;
+		const float p00x1 = p00x0 + panelW;
+		const float p00y1 = p00y0 + panelH;
+
+		const float p01x0 = p00x1 + gap;
+		const float p01y0 = margin;
+		const float p01x1 = p01x0 + panelW;
+		const float p01y1 = p01y0 + panelH;
+
+		const float p10x0 = margin;
+		const float p10y0 = p00y1 + gap;
+		const float p10x1 = p10x0 + panelW;
+		const float p10y1 = p10y0 + panelH;
+
+		const float p11x0 = p10x1 + gap;
+		const float p11y0 = p01y1 + gap;
+		const float p11x1 = p11x0 + panelW;
+		const float p11y1 = p11y0 + panelH;
+
+		DrawRainbowSweepPanel(p00x0, p00y0, p00x1, p00y1, typeNames[0], results[0], 0);
+		DrawRainbowSweepPanel(p01x0, p01y0, p01x1, p01y1, typeNames[1], results[1], 1);
+		DrawRainbowSweepPanel(p10x0, p10y0, p10x1, p10y1, typeNames[2], results[2], 2);
+		DrawRainbowSweepPanel(p11x0, p11y0, p11x1, p11y1, typeNames[3], results[3], 3);
+
+		DrawText("fc sweep benchmark by parameter space", 20, 2, 20, RAYWHITE);
+		DrawText("gray = analog prototype, rainbow = fitted IIR for each fc", 1120, 2, 18, argb(0xffc0c0c0));
+
+		EndDrawing();
+	}
+
+	CloseWindow();
+	return 0;
+}
 int main()
 {
 	//main1();
-	main2();
+	//main2();
+	main3_testfc();
 }

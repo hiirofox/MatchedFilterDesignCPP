@@ -580,7 +580,7 @@ private:
 	constexpr static int numPoints = 100;
 
 	AdamOptimizer optAdam;
-	LbfgsOptimizer3 optLbfgs;
+	LbfgsOptimizerLightweight optLbfgs;
 	//Optimizer optGrad;
 	OptimizerBase* optBase = &optAdam;
 
@@ -618,7 +618,7 @@ private:
 	float magLinSpace[numPoints] = { 0 };
 	float meanTargetDB = 0.0f;
 
-	float Error(std::vector<float>& coeffs)
+	float Error(const std::vector<float>& coeffs) const
 	{
 		iir->SetCoeffs(coeffs);
 
@@ -697,14 +697,14 @@ public:
 
 	int totalCycles = 0;
 	int isFirstTimeSwitch = 0;
-	void RunOptimizer(int numCycles)
+	void RunOptimizer(int numCycles, int maxCycles)
 	{
-		if (totalCycles > 400)return;
+		if (totalCycles > maxCycles)return;
 
 		optBase->RunOptimizer(numCycles);
 
 		totalCycles += numCycles;
-		if (totalCycles > 380)
+		if (totalCycles > maxCycles * 4.0 / 10.0)
 		{
 			if (!isFirstTimeSwitch)
 			{
@@ -715,12 +715,13 @@ public:
 			}
 		}
 	}
-	void RunOptimizerDirect(int adamCycles = 500, int lbfgsCycles = 20)//建议用这个
+	void RunOptimizerDirect(int adamCycles = 40, int lbfgsCycles = 160)//建议用这个
 	{
 		optAdam.RunOptimizer(adamCycles);
 		optAdam.GetBestVec(coeffs);
 		optLbfgs.SetBasin(coeffs);
 		optLbfgs.RunOptimizer(lbfgsCycles);
+		optBase = &optLbfgs;
 	}
 
 	void GetNowCoeffs(std::vector<float>& coeffs)
@@ -730,7 +731,8 @@ public:
 	void GetResponseDB(std::vector<float>& outMagDB, float sampleRate = 48000.0f)
 	{
 		std::vector<float> nowCoeffs;
-		optBase->GetNowVec(nowCoeffs);
+		//optBase->GetNowVec(nowCoeffs);
+		optBase->GetBestVec(nowCoeffs);
 		iir->SetCoeffs(nowCoeffs);
 
 		outMagDB.resize(numPoints);
