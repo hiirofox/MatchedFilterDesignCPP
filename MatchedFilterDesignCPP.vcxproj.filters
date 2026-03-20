@@ -50,5 +50,8 @@
     <ClInclude Include="dsp\real_iir_whitening.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="analygrad.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

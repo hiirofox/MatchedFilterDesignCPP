@@ -837,7 +837,7 @@ private:
 		return a * b * (rand() % 2 ? 1.0f : -1.0f);
 	}
 
-	float spaceTransitionV = 0.3f;
+	float spaceTransitionV = 0.18f;
 	float TransitionSpace(float minv, float maxv, float normx) const
 	{
 		float logspace = std::exp(std::log(minv) + (std::log(maxv) - std::log(minv)) * normx);
@@ -926,9 +926,8 @@ private:
 			float e1 = fabsf(errDB);
 			float ev = e1 * 0.01 + e2 * 0.99;
 			float freqk = fitFreqSpace[i] / 48000.0 * 0.5 + 0.5;
-			float dbk = 1.0 / (30.1 + std::min(-30.0f, fitMagDBSpace[i]));
-			//totalErrDB += ev * freqk * (0.2 + 0.8 * dbk);
-			totalErrDB += ev * freqk;
+			float dbk = sqrtf(fabsf(fitMagDBSpace[i])) * 80.0 + 1.0;
+			totalErrDB += ev * freqk * dbk;
 		}
 		return totalErrDB / numPoints * 100.0;
 	}
@@ -1001,7 +1000,7 @@ public:
 		coeffs[8] = randNormV();
 
 		optAdam.SetupOptimizer(9, coeffs, adamLearningRate[selectIIRType] * 1.5);
-		optLbfgs.SetupOptimizer(9, coeffs, 0.5f);
+		optLbfgs.SetupOptimizer(9, coeffs, 0.25f);
 
 		optAdam.SetErrorFunc([this](std::vector<float>& v) { return Error(v); });
 		optLbfgs.SetErrorFunc([this](std::vector<float>& v) { return Error(v); });
@@ -1113,6 +1112,429 @@ public:
 		float evalFreq = freqhz;
 		if (warpEnabled)
 			evalFreq = WarpFreqHz(freqhz, warpA, kSampleRate);
+		return iir->GetMagResp(evalFreq, kSampleRate);
+	}
+};
+
+
+class MatchedIIRDesignAutoFindA : public IIRDesignBase
+{
+private:
+	constexpr static float M_PI = 3.14159265358979323846f;
+	constexpr static int numPoints = 50;
+	constexpr static float kSampleRate = 48000.0f;
+
+	// IIR coeff count = 9, extra dim for warp-a raw parameter
+	constexpr static int kIIRCoeffCount = 9;
+	constexpr static int kTotalCoeffCount = 10;
+
+	AdamOptimizer optAdam;
+	LbfgsOptimizerLightweight optLbfgs;
+	OptimizerBase* optBase = &optAdam;
+
+	int selectIIRType = 0;
+	IIRFilterBase* iirs[4] =
+	{
+		new FourStageNonlinearWhiteningIIR,
+		new FourStageRealIIR,
+		new TwoStageComplexIIR,
+		new TwoStageCosIIR
+	};
+
+	float adamLearningRate[4] = { 2.0f, 0.01f, 0.25f, 0.35f };
+
+	IIRFilterBase* iir = iirs[0];
+	AnalogPrototypeFilter prototype;
+
+	std::vector<float> coeffs;      // 10D, last dim = raw warp-a
+	std::vector<float> iirCoeffs9;  // temp view for SetCoeffs(9)
+
+	float warpThreshold = 15000.0f;
+	bool warpEnabled = true;
+
+	// display / debug state
+	float warpA = 0.0f;     // best coeffs decoded a
+	float nowWarpA = 0.0f;  // now coeffs decoded a
+
+	AnalogFilterType lastType = AnalogFilterType::LP;
+	float lastFc = 1000.0f;
+	float lastQ = 0.707f;
+	float lastGain = 0.0f;
+	float lastStages = 1.0f;
+
+	float displayFreqSpace[numPoints] = { 0 };
+	float displayMagDBSpace[numPoints] = { 0 };
+	float displayMagLinSpace[numPoints] = { 0 };
+
+	// design eval axis only, target mag is now dynamic w.r.t. candidate a
+	float fitFreqSpace[numPoints] = { 0 };
+
+private:
+	float randNormV()
+	{
+		const float a = (float)rand() / (float)RAND_MAX;
+		const float b = (float)rand() / (float)RAND_MAX;
+		return a * b * (rand() % 2 ? 1.0f : -1.0f);
+	}
+
+	float spaceTransitionV = 0.18f;
+	float TransitionSpace(float minv, float maxv, float normx) const
+	{
+		float logspace = std::exp(std::log(minv) + (std::log(maxv) - std::log(minv)) * normx);
+		float linspace = minv + (maxv - minv) * normx;
+		return linspace * (1.0f - spaceTransitionV) + logspace * spaceTransitionV;
+	}
+
+	static float Clamp(float x, float lo, float hi)
+	{
+		return (x < lo) ? lo : ((x > hi) ? hi : x);
+	}
+
+	static float WarpFreqRad(float w, float a)
+	{
+		const float num = (1.0f - a * a) * std::sin(w);
+		const float den = (1.0f + a * a) * std::cos(w) - 2.0f * a;
+		float wp = std::atan2(num, den);
+		if (wp < 0.0f) wp += (float)M_PI;
+		return Clamp(wp, 0.0f, (float)M_PI);
+	}
+
+	static float WarpFreqHz(float fHz, float a, float sampleRate = kSampleRate)
+	{
+		const float w = 2.0f * (float)M_PI * fHz / sampleRate;
+		const float wp = WarpFreqRad(Clamp(w, 1.0e-9f, (float)M_PI - 1.0e-9f), a);
+		return wp * sampleRate / (2.0f * (float)M_PI);
+	}
+
+	static float SolveWarpA(float fc, float threshold, float sampleRate = kSampleRate)
+	{
+		if (fc >= threshold)
+			return 0.0f;
+
+		const float wc = Clamp(2.0f * (float)M_PI * fc / sampleRate, 1.0e-9f, (float)M_PI - 1.0e-9f);
+		const float wt = Clamp(2.0f * (float)M_PI * threshold / sampleRate, 1.0e-9f, (float)M_PI - 1.0e-9f);
+
+		auto func = [&](float a)
+			{
+				return WarpFreqRad(wc, a) - wt;
+			};
+
+		float lo = 0.0f;
+		float hi = 0.999999f;
+		float flo = func(lo);
+		float fhi = func(hi);
+
+		if (flo == 0.0f) return lo;
+		if (fhi == 0.0f) return hi;
+		if (flo * fhi > 0.0f)
+			return 0.0f;
+
+		for (int iter = 0; iter < 80; ++iter)
+		{
+			const float mid = 0.5f * (lo + hi);
+			const float fmid = func(mid);
+
+			if (flo * fmid <= 0.0f)
+			{
+				hi = mid;
+				fhi = fmid;
+			}
+			else
+			{
+				lo = mid;
+				flo = fmid;
+			}
+		}
+
+		return 0.5f * (lo + hi);
+	}
+
+	// -------------------------
+	// raw coeff <-> bounded warp a
+	// -------------------------
+	static constexpr float kMaxWarpA = 0.998f;
+
+	static float DecodeWarpA(float raw)
+	{
+		// smooth bounded mapping
+		return kMaxWarpA * std::tanh(raw);
+	}
+
+	static float EncodeWarpA(float a)
+	{
+		const float x = Clamp(a / kMaxWarpA, -0.9999f, 0.9999f);
+		return 0.5f * std::log((1.0f + x) / (1.0f - x));
+	}
+
+	void SplitCoeffs(const std::vector<float>& in, std::vector<float>& outIIRCoeffs, float& outWarpA) const
+	{
+		outIIRCoeffs.resize(kIIRCoeffCount);
+		for (int i = 0; i < kIIRCoeffCount; ++i)
+			outIIRCoeffs[i] = in[i];
+
+		outWarpA = DecodeWarpA(in[kIIRCoeffCount]);
+	}
+
+	float GetTargetMagDBAtFitFreq(float fitFreqHz, float candidateWarpA) 
+	{
+		float srcFreq = fitFreqHz;
+		if (warpEnabled)
+			srcFreq = WarpFreqHz(fitFreqHz, -candidateWarpA, kSampleRate);
+
+		const float mag = prototype.GetMapResp(lastType, srcFreq, lastFc, lastQ, lastGain, lastStages);
+		const float magLin = std::max(mag, 1.0e-30f);
+		return 20.0f * std::log10(magLin);
+	}
+
+	float Error(const std::vector<float>& v) 
+	{
+		float candidateWarpA = 0.0f;
+
+		// extract 9 IIR coeffs
+		iirCoeffs9.resize(kIIRCoeffCount);
+		for (int i = 0; i < kIIRCoeffCount; ++i)
+			iirCoeffs9[i] = v[i];
+		candidateWarpA = DecodeWarpA(v[kIIRCoeffCount]);
+
+		iir->SetCoeffs(iirCoeffs9);
+
+		float totalErrDB = 0.0f;
+		for (int i = 0; i < numPoints; ++i)
+		{
+			const float fitFreq = fitFreqSpace[i];
+			const float mag = iir->GetMagResp(fitFreq);
+			const float magDB = 20.0f * std::log10(std::max(mag, 1.0e-30f));
+
+			const float targetDB = GetTargetMagDBAtFitFreq(fitFreq, candidateWarpA);
+			const float errDB = (magDB - targetDB);
+
+			float e2 = errDB * errDB;
+			float e1 = fabsf(errDB);
+			float ev = e1 * 0.01f + e2 * 0.99f;
+
+			float freqk = fitFreq / 48000.0f * 0.5f + 0.5f;
+			float dbk = sqrtf(fabsf(targetDB)) * 80.0f + 1.0f;
+
+			totalErrDB += ev * freqk * dbk;
+		}
+
+		// weak regularization on raw warp dimension, avoid optimizer overusing warp
+		{
+			const float rawA = v[kIIRCoeffCount];
+			//totalErrDB += rawA * rawA * 0.0005f;
+		}
+
+		return totalErrDB / numPoints * 100.0f;
+	}
+
+	void RebuildTargetSpaces()
+	{
+		for (int i = 0; i < numPoints; ++i)
+		{
+			displayFreqSpace[i] = TransitionSpace(20.0f, 24000.0f, (float)i / (float)(numPoints - 1));
+			fitFreqSpace[i] = displayFreqSpace[i];
+
+			const float f = displayFreqSpace[i];
+			const float mag = prototype.GetMapResp(lastType, f, lastFc, lastQ, lastGain, lastStages);
+			displayMagLinSpace[i] = std::max(mag, 1.0e-30f);
+			displayMagDBSpace[i] = 20.0f * std::log10(displayMagLinSpace[i]);
+		}
+	}
+
+	float GetHeuristicInitWarpA() const
+	{
+		// 保留你原本的启发式作为初始化，但不再固定使用
+		if (!warpEnabled)
+			return 0.0f;
+
+		if (lastFc >= warpThreshold)
+			return 0.0f;
+
+		return SolveWarpA(lastFc, warpThreshold, kSampleRate);
+	}
+
+public:
+	MatchedIIRDesignAutoFindA(int iirtype = 2)
+	{
+		if (iirtype > 3) iirtype = 3;
+		if (iirtype < 0) iirtype = 0;
+
+		selectIIRType = iirtype;
+		iir = iirs[selectIIRType];
+
+		coeffs.resize(kTotalCoeffCount);
+		iirCoeffs9.resize(kIIRCoeffCount);
+
+		Init();
+	}
+
+	void Init()
+	{
+		srand(31415926);
+
+		if ((int)coeffs.size() < kTotalCoeffCount)
+			coeffs.resize(kTotalCoeffCount);
+
+		for (int i = 0; i < kIIRCoeffCount; ++i)
+			coeffs[i] = randNormV();
+
+		// warp raw param init from heuristic a
+		const float initA = GetHeuristicInitWarpA();
+		coeffs[kIIRCoeffCount] = EncodeWarpA(initA);
+
+		optAdam.SetupOptimizer(kTotalCoeffCount, coeffs, adamLearningRate[selectIIRType] * 0.2f);
+		optLbfgs.SetupOptimizer(kTotalCoeffCount, coeffs, 0.25f);
+
+		optAdam.SetErrorFunc([this](std::vector<float>& v) { return Error(v); });
+		optLbfgs.SetErrorFunc([this](std::vector<float>& v) { return Error(v); });
+
+		for (int i = 0; i < numPoints; ++i)
+		{
+			displayFreqSpace[i] = TransitionSpace(20.0f, 24000.0f, (float)i / (float)(numPoints - 1));
+			fitFreqSpace[i] = displayFreqSpace[i];
+			displayMagDBSpace[i] = 0.0f;
+			displayMagLinSpace[i] = 1.0f;
+		}
+
+		warpA = initA;
+		nowWarpA = initA;
+		totalCycles = 0;
+		isFirstTimeSwitch = 0;
+		optBase = &optAdam;
+	}
+
+	void SetWarpThreshold(float hz)
+	{
+		warpThreshold = hz;
+	}
+
+	float GetWarpThreshold() const
+	{
+		return warpThreshold;
+	}
+
+	bool IsWarpEnabled() const
+	{
+		return warpEnabled;
+	}
+
+	float GetWarpA() const
+	{
+		// 返回 best warpA
+		return warpA;
+	}
+
+	void SetupAnalogPrototype(AnalogFilterType type, float fc, float q, float gain, float stages) override
+	{
+		lastType = type;
+		lastFc = fc;
+		lastQ = q;
+		lastGain = gain;
+		lastStages = stages;
+
+		warpEnabled = true; // 现在允许优化器自己决定 a 是否接近 0
+		RebuildTargetSpaces();
+		Init();
+	}
+
+	int totalCycles = 0;
+	int isFirstTimeSwitch = 0;
+
+	void RunOptimizer(int numCycles, int maxCycles) override
+	{
+		if (totalCycles > maxCycles) return;
+
+		optBase->RunOptimizer(numCycles);
+
+		totalCycles += numCycles;
+		if (totalCycles > maxCycles * 0.5f / 10.0f)
+		{
+			if (!isFirstTimeSwitch)
+			{
+				isFirstTimeSwitch = 1;
+				optBase->GetBestVec(coeffs);
+				optBase = &optLbfgs;
+				optBase->SetBasin(coeffs);
+			}
+		}
+
+		// update cached warp states
+		{
+			std::vector<float> tmp;
+			optBase->GetBestVec(tmp);
+			if ((int)tmp.size() >= kTotalCoeffCount)
+				warpA = DecodeWarpA(tmp[kIIRCoeffCount]);
+
+			optBase->GetNowVec(tmp);
+			if ((int)tmp.size() >= kTotalCoeffCount)
+				nowWarpA = DecodeWarpA(tmp[kIIRCoeffCount]);
+		}
+	}
+
+	void RunOptimizerDirect(int adamCycles = 40, int lbfgsCycles = 160) override
+	{
+		optAdam.RunOptimizer(adamCycles);
+		optAdam.GetBestVec(coeffs);
+
+		optLbfgs.SetBasin(coeffs);
+		optLbfgs.RunOptimizer(lbfgsCycles);
+		optBase = &optLbfgs;
+
+		optBase->GetBestVec(coeffs);
+		warpA = DecodeWarpA(coeffs[kIIRCoeffCount]);
+
+		optBase->GetNowVec(coeffs);
+		nowWarpA = DecodeWarpA(coeffs[kIIRCoeffCount]);
+	}
+
+	void GetNowCoeffs(std::vector<float>& outCoeffs) override
+	{
+		optBase->GetNowVec(outCoeffs);
+	}
+
+	void GetBestCoeffs(std::vector<float>& outCoeffs) override
+	{
+		optBase->GetBestVec(outCoeffs);
+	}
+
+	float GetPrototypeResp(float freqhz) override
+	{
+		return prototype.GetMapResp(lastType, freqhz, lastFc, lastQ, lastGain, lastStages);
+	}
+
+	float GetNowIIRResp(float freqhz) override
+	{
+		optBase->GetNowVec(coeffs);
+
+		for (int i = 0; i < kIIRCoeffCount; ++i)
+			iirCoeffs9[i] = coeffs[i];
+
+		nowWarpA = DecodeWarpA(coeffs[kIIRCoeffCount]);
+
+		iir->SetCoeffs(iirCoeffs9);
+
+		float evalFreq = freqhz;
+		if (warpEnabled)
+			evalFreq = WarpFreqHz(freqhz, nowWarpA, kSampleRate);
+
+		return iir->GetMagResp(evalFreq, kSampleRate);
+	}
+
+	float GetBestIIRResp(float freqhz) override
+	{
+		optBase->GetBestVec(coeffs);
+
+		for (int i = 0; i < kIIRCoeffCount; ++i)
+			iirCoeffs9[i] = coeffs[i];
+
+		warpA = DecodeWarpA(coeffs[kIIRCoeffCount]);
+
+		iir->SetCoeffs(iirCoeffs9);
+
+		float evalFreq = freqhz;
+		if (warpEnabled)
+			evalFreq = WarpFreqHz(freqhz, warpA, kSampleRate);
+
 		return iir->GetMagResp(evalFreq, kSampleRate);
 	}
 };

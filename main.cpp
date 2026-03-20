@@ -7,6 +7,7 @@
 #include "raylib/src/raylib.h"
 #include "dsp/optimizer.h"
 #include "dsp/filter.h"
+#include "dsp/analygrad.h"
 
 constexpr Color argb(unsigned int col)
 {
@@ -342,13 +343,14 @@ static int TestOptimizationHistory()
 	LoadUIFont();
 	SetTargetFPS(60);
 
-	WarpedMatchedIIRDesign design(2);
-	design.SetWarpThreshold(15000.0f);
-	const AnalogFilterType protoType = AnalogFilterType::Peaking;
-	const float q = 2.07f;
+	using IIRDesigner = AnalyticGradient::MatchedComplexIIRDesignAnalytic;
+	IIRDesigner design(2);
+	//design.SetWarpThreshold(15000.0f);
+	const AnalogFilterType protoType = AnalogFilterType::LP;
+	const float q = 20.07f;
 	const float gain = 12.0f;
-	const float stages = 2.0f;
-	design.SetupAnalogPrototype(protoType, 18000, q, gain, stages);
+	const float stages = 1.0f;
+	design.SetupAnalogPrototype(protoType, 2000, q, gain, stages);
 
 	std::vector<std::vector<float>> historyCoeffs;
 	int totalIterations = 0;
@@ -365,7 +367,7 @@ static int TestOptimizationHistory()
 
 	while (!WindowShouldClose())
 	{
-		design.RunOptimizer(1, 800);
+		design.RunOptimizer(1, 400);
 		++totalIterations;
 
 		std::vector<float> nowCoeffs;
@@ -385,7 +387,7 @@ static int TestOptimizationHistory()
 
 		for (int i = 0; i < (int)historyCoeffs.size(); ++i)
 		{
-			WarpedMatchedIIRDesign temp = design;
+			IIRDesigner temp = design;
 			temp.GetNowCoeffs(nowCoeffs); // no-op; keeps compiler quiet if needed
 			const float t = historyCoeffs.size() > 1 ? (float)i / (float)(historyCoeffs.size() - 1) : 0.0f;
 			Color c = ColorFromHSV(270.0f * (1.0f - t), 1.0f, 1.0f);
@@ -400,7 +402,7 @@ static int TestOptimizationHistory()
 				const float f1 = std::exp(std::log(20.0f) + (std::log(24000.0f) - std::log(20.0f)) * tt1);
 
 				// 用当前设计对象的 warped 逻辑，只借接口不借旧表
-				WarpedMatchedIIRDesign local = design;
+				IIRDesigner local = design;
 				local.GetNowCoeffs(coeffs); // 占位，不使用
 				// 这里直接复用 design 当前对象不太方便强塞任意 coeff，所以历史轨迹仍建议简化成只画当前与目标
 				// 故不再画历史表，改成只画当前响应
@@ -679,7 +681,7 @@ static int TestFcSweepByParameterSpace()
 {
 	InitWindow(1600, 980, "TestFcSweepByParameterSpace");
 	LoadUIFont();
-	SetTargetFPS(60);
+	SetTargetFPS(5);
 
 	constexpr int numTypes = 4;
 	const char* typeNames[numTypes] =
@@ -691,20 +693,20 @@ static int TestFcSweepByParameterSpace()
 	};
 
 	const AnalogFilterType protoType = AnalogFilterType::LP;
-	const float q = 2.07f;
+	const float q = 12.07f;
 	const float gain = 6.0f;
-	const float stages = 2.0f;
+	const float stages = 1.0f;
 
 	const float fcMin = 20.0f;
 	const float fcMax = 36000.0f;
-	const int densityPerDecade = 3;
+	const int densityPerDecade = 15;
 
-	const float warpThresholdHz = 20000.0f;
-	const int adamCycles = 50;
-	const int lbfgsCycles = 150;
+	const float warpThresholdHz = 17000.0f;
+	const int adamCycles = 20;
+	const int lbfgsCycles = 180;
 
-	const float dbMin = -35.0f;
 	const float dbMax = 35.0f;
+	const float dbMin = -55.0f;
 
 	const float W = 1600.0f;
 	const float H = 980.0f;
@@ -716,13 +718,15 @@ static int TestFcSweepByParameterSpace()
 
 	const auto fcList = GenerateLogFC(fcMin, fcMax, densityPerDecade);
 
-	std::vector<WarpedMatchedIIRDesign*> designs[4];
+	using IIRDesigner = AnalyticGradient::MatchedComplexIIRDesignAnalytic;
+
+	std::vector<IIRDesigner*> designs[4];
 	for (int t = 0; t < numTypes; ++t)
 	{
 		for (float fc : fcList)
 		{
-			auto* d = new WarpedMatchedIIRDesign(t);
-			d->SetWarpThreshold(warpThresholdHz);
+			auto* d = new IIRDesigner(t);
+			//d->SetWarpThreshold(warpThresholdHz);
 			d->SetupAnalogPrototype(protoType, fc, q, gain, stages);
 			d->RunOptimizerDirect(adamCycles, lbfgsCycles);
 			designs[t].push_back(d);
@@ -730,7 +734,7 @@ static int TestFcSweepByParameterSpace()
 	}
 
 	auto DrawSweepPanel =
-		[&](float x0, float y0, float x1, float y1, const char* title, const std::vector<WarpedMatchedIIRDesign*>& ds)
+		[&](float x0, float y0, float x1, float y1, const char* title, const std::vector<IIRDesigner*>& ds)
 		{
 			DrawPanelBox(x0, y0, x1, y1, title);
 
@@ -802,7 +806,7 @@ static int TestFcSweepByParameterSpace()
 
 int main()
 {
-	//return TestOptimizationHistory();
+	return TestOptimizationHistory();
 	//return TestTopologyBenchmark();
-	return TestFcSweepByParameterSpace();
+	//return TestFcSweepByParameterSpace();
 }
