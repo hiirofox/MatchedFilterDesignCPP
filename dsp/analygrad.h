@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include <vector>
 #include <functional>
@@ -33,10 +33,10 @@ namespace AnalyticGradient
 			return e * e + 1e-4;
 		}
 
-		// ¶Ô Error(i, freqhz, iirmagdb) ¹ØÓÚ iirmagdb µÄÊıÖµÎ¢·Ö
+		// å¯¹ Error(i, freqhz, iirmagdb) å…³äº iirmagdb çš„æ•°å€¼å¾®åˆ†
 		virtual double dError_dMagDb(int i, double freqhz, double iirmagdb)
 		{
-			// ÖĞĞÄ²î·Ö²½³¤£¬µ¥Î» dB
+			// ä¸­å¿ƒå·®åˆ†æ­¥é•¿ï¼Œå•ä½ dB
 			const double h = 1.0e-4;
 			const double ep = Error(i, freqhz, iirmagdb + h);
 			const double em = Error(i, freqhz, iirmagdb - h);
@@ -46,7 +46,7 @@ namespace AnalyticGradient
 		virtual ~MagErrorBase() = default;
 	};
 
-	template<int numOrders = 2> // numOrders¸öÁãµã£¬numOrders¸ö¼«µã
+	template<int numOrders = 2> // numOrdersä¸ªé›¶ç‚¹ï¼ŒnumOrdersä¸ªæç‚¹
 	class ComplexIIRGradient
 	{
 	private:
@@ -55,14 +55,14 @@ namespace AnalyticGradient
 		static constexpr double kTiny = 1.0e-18;
 
 	public:
-		// ²ÎÊıÏòÁ¿°²ÅÅ£ºgaindB, z0re, z0im, ..., p0re, p0im, ...
+		// å‚æ•°å‘é‡å®‰æ’ï¼šgaindB, z0re, z0im, ..., p0re, p0im, ...
 		void CalcGradient(std::vector<double>& paramsIn,
 			std::vector<double>& paramsGradOut,
 			MagErrorBase& magErrMethod,
 			double sampleRate = 48000.0)
 		{
 			const int expectedNumParams = 1 + 4 * numOrders;
-			//assert((int)paramsIn.size() == expectedNumParams);
+			////assert((int)paramsIn.size() == expectedNumParams);
 
 			const std::vector<double>& freqHzs = magErrMethod.GetFreqSpace();
 			const int numPoints = (int)freqHzs.size();
@@ -78,7 +78,7 @@ namespace AnalyticGradient
 				const double cw = cos(w);
 				const double sw = sin(w);
 
-				// ÏÈËãµ±Ç°ÆµµãµÄ IIR log-magnitude in dB
+				// å…ˆç®—å½“å‰é¢‘ç‚¹çš„ IIR log-magnitude in dB
 				double magDbA = gainDb;
 
 				// zero contributions
@@ -109,13 +109,13 @@ namespace AnalyticGradient
 					magDbA -= 10.0 * log10f(d2);
 				}
 
-				// µ¥ÆµµãËğÊ§¶Ô magDbA µÄµ¼Êı
+				// å•é¢‘ç‚¹æŸå¤±å¯¹ magDbA çš„å¯¼æ•°
 				const double psi = magErrMethod.dError_dMagDb(k, freqHz, magDbA);
 
-				// ¶Ô gaindB µÄµ¼ÊıºãÎª 1
+				// å¯¹ gaindB çš„å¯¼æ•°æ’ä¸º 1
 				paramsGradOut[0] += psi;
 
-				// ¶ÔÁãµã²ÎÊıµÄµ¼Êı
+				// å¯¹é›¶ç‚¹å‚æ•°çš„å¯¼æ•°
 				for (int i = 0; i < numOrders; ++i)
 				{
 					const int base = 1 + 2 * i;
@@ -129,7 +129,7 @@ namespace AnalyticGradient
 					double dMagDb_dZr = kDbScale * dx / d2;
 					double dMagDb_dZi = kDbScale * dy / d2;
 
-					// ¿ÉÑ¡£ºµ¥Î»Ô²¸½½üÌİ¶ÈÏŞÖÆ/Ç¯ÖÆ
+					// å¯é€‰ï¼šå•ä½åœ†é™„è¿‘æ¢¯åº¦é™åˆ¶/é’³åˆ¶
 					// {
 					//     const double mag = std::sqrt(zr * zr + zi * zi);
 					//     const double magMax = 0.999;
@@ -145,7 +145,7 @@ namespace AnalyticGradient
 					paramsGradOut[base + 1] += psi * dMagDb_dZi;
 				}
 
-				// ¶Ô¼«µã²ÎÊıµÄµ¼Êı
+				// å¯¹æç‚¹å‚æ•°çš„å¯¼æ•°
 				for (int i = 0; i < numOrders; ++i)
 				{
 					const int base = 1 + 2 * numOrders + 2 * i;
@@ -159,7 +159,7 @@ namespace AnalyticGradient
 					double dMagDb_dPr = -kDbScale * dx / d2;
 					double dMagDb_dPi = -kDbScale * dy / d2;
 
-					// ¿ÉÑ¡£ºµ¥Î»Ô²¸½½üÌİ¶ÈÏŞÖÆ/Ç¯ÖÆ
+					// å¯é€‰ï¼šå•ä½åœ†é™„è¿‘æ¢¯åº¦é™åˆ¶/é’³åˆ¶
 					// {
 					//     const double mag = std::sqrt(pr * pr + pi * pi);
 					//     const double magMax = 0.999;
@@ -181,13 +181,13 @@ namespace AnalyticGradient
 			double sampleRate = 48000.0)
 		{
 			const int expectedNumParams = 1 + 4 * numOrders;
-			//assert((int)paramsIn.size() == expectedNumParams);
+			////assert((int)paramsIn.size() == expectedNumParams);
 
 			const std::vector<double>& freqHzs = magErrMethod.GetFreqSpace();
 			const std::vector<double>& targetDB = magErrMethod.GetGlobalDB();
 
 			const int numPoints = (int)freqHzs.size();
-			//assert((int)targetDB.size() == numPoints);
+			//////assert((int)targetDB.size() == numPoints);
 
 			const double gainDb = paramsIn[0];
 			double totalLoss = 0.0;
@@ -231,7 +231,7 @@ namespace AnalyticGradient
 		double GetMagResp(const std::vector<double>& params, double freqHz, double sampleRate = 48000.0)
 		{
 			const int expectedNumParams = 1 + 4 * numOrders;
-			//assert((int)params.size() == expectedNumParams);
+			//////assert((int)params.size() == expectedNumParams);
 
 			const double gainDb = params[0];
 
@@ -274,8 +274,207 @@ namespace AnalyticGradient
 			return magLinear;
 		}
 	};
+	template<int numOrders = 2> // numOrdersä¸ªé›¶ç‚¹ï¼ŒnumOrdersä¸ªæç‚¹
+	class ComplexIIRGradientMagTheta
+	{
+	private:
+		static constexpr double kPi = 3.1415926535897932384626433832795;
+		static constexpr double kDbScale = 20.0 / 2.3025850929940456840179914546844; // 20 / ln(10)
+		static constexpr double kTiny = 1.0e-18;
 
-	class AdamOptimizer // ´¿ÊıÖµÓÅ»¯Æ÷£¬²»ÓÃ¹ØĞÄ²ÎÊı¾ßÌåµÄÒâÒå
+	public:
+		// å‚æ•°å‘é‡å®‰æ’ï¼šgaindB, z0mag, z0theta, ..., p0mag, p0theta, ...
+		void CalcGradient(std::vector<double>& paramsIn,
+			std::vector<double>& paramsGradOut,
+			MagErrorBase& magErrMethod,
+			double sampleRate = 48000.0)
+		{
+			const int expectedNumParams = 1 + 4 * numOrders;
+			//////assert((int)paramsIn.size() == expectedNumParams);
+
+			const std::vector<double>& freqHzs = magErrMethod.GetFreqSpace();
+			const int numPoints = (int)freqHzs.size();
+
+			paramsGradOut.assign(expectedNumParams, 0.0);
+
+			const double gainDb = paramsIn[0];
+
+			for (int k = 0; k < numPoints; ++k)
+			{
+				const double freqHz = freqHzs[k];
+				const double w = 2.0 * kPi * freqHz / sampleRate;
+
+				double magDbA = gainDb;
+
+				// zero contributions
+				for (int i = 0; i < numOrders; ++i)
+				{
+					const int base = 1 + 2 * i;
+					const double zm = paramsIn[base + 0];
+					const double zt = paramsIn[base + 1];
+
+					const double delta = w - zt;
+					const double cosDelta = std::cos(delta);
+					const double d2 = 1.0 + zm * zm - 2.0 * zm * cosDelta + kTiny;
+
+					magDbA += 10.0 * std::log10(d2);
+				}
+
+				// pole contributions
+				for (int i = 0; i < numOrders; ++i)
+				{
+					const int base = 1 + 2 * numOrders + 2 * i;
+					const double pm = paramsIn[base + 0];
+					const double pt = paramsIn[base + 1];
+
+					const double delta = w - pt;
+					const double cosDelta = std::cos(delta);
+					const double d2 = 1.0 + pm * pm - 2.0 * pm * cosDelta + kTiny;
+
+					magDbA -= 10.0 * std::log10(d2);
+				}
+
+				// å•é¢‘ç‚¹æŸå¤±å¯¹ magDbA çš„å¯¼æ•°
+				const double psi = magErrMethod.dError_dMagDb(k, freqHz, magDbA);
+
+				// å¯¹ gaindB çš„å¯¼æ•°æ’ä¸º 1
+				paramsGradOut[0] += psi;
+
+				// å¯¹é›¶ç‚¹å‚æ•°çš„å¯¼æ•°
+				for (int i = 0; i < numOrders; ++i)
+				{
+					const int base = 1 + 2 * i;
+					const double zm = paramsIn[base + 0];
+					const double zt = paramsIn[base + 1];
+
+					const double delta = w - zt;
+					const double cosDelta = std::cos(delta);
+					const double sinDelta = std::sin(delta);
+					const double d2 = 1.0 + zm * zm - 2.0 * zm * cosDelta + kTiny;
+
+					const double dMagDb_dZm = kDbScale * (zm - cosDelta) / d2;
+					const double dMagDb_dZt = -kDbScale * zm * sinDelta / d2;
+
+					paramsGradOut[base + 0] += psi * dMagDb_dZm;
+					paramsGradOut[base + 1] += psi * dMagDb_dZt;
+				}
+
+				// å¯¹æç‚¹å‚æ•°çš„å¯¼æ•°
+				for (int i = 0; i < numOrders; ++i)
+				{
+					const int base = 1 + 2 * numOrders + 2 * i;
+					const double pm = paramsIn[base + 0];
+					const double pt = paramsIn[base + 1];
+
+					const double delta = w - pt;
+					const double cosDelta = std::cos(delta);
+					const double sinDelta = std::sin(delta);
+					const double d2 = 1.0 + pm * pm - 2.0 * pm * cosDelta + kTiny;
+
+					const double dMagDb_dPm = -kDbScale * (pm - cosDelta) / d2;
+					const double dMagDb_dPt = kDbScale * pm * sinDelta / d2;
+
+					paramsGradOut[base + 0] += psi * dMagDb_dPm;
+					paramsGradOut[base + 1] += psi * dMagDb_dPt;
+				}
+			}
+		}
+
+		double CalcTotalLoss(const std::vector<double>& paramsIn,
+			MagErrorBase& magErrMethod,
+			double sampleRate = 48000.0)
+		{
+			const int expectedNumParams = 1 + 4 * numOrders;
+			//////assert((int)paramsIn.size() == expectedNumParams);
+
+			const std::vector<double>& freqHzs = magErrMethod.GetFreqSpace();
+			const std::vector<double>& targetDB = magErrMethod.GetGlobalDB();
+
+			const int numPoints = (int)freqHzs.size();
+			//////assert((int)targetDB.size() == numPoints);
+
+			const double gainDb = paramsIn[0];
+			double totalLoss = 0.0;
+
+			for (int k = 0; k < numPoints; ++k)
+			{
+				const double freqHz = freqHzs[k];
+				const double w = 2.0 * kPi * freqHz / sampleRate;
+
+				double magDbA = gainDb;
+
+				for (int i = 0; i < numOrders; ++i)
+				{
+					const int base = 1 + 2 * i;
+					const double zm = paramsIn[base + 0];
+					const double zt = paramsIn[base + 1];
+
+					const double delta = w - zt;
+					const double d2 = 1.0 + zm * zm - 2.0 * zm * std::cos(delta) + kTiny;
+
+					magDbA += 10.0 * std::log10(d2);
+				}
+
+				for (int i = 0; i < numOrders; ++i)
+				{
+					const int base = 1 + 2 * numOrders + 2 * i;
+					const double pm = paramsIn[base + 0];
+					const double pt = paramsIn[base + 1];
+
+					const double delta = w - pt;
+					const double d2 = 1.0 + pm * pm - 2.0 * pm * std::cos(delta) + kTiny;
+
+					magDbA -= 10.0 * std::log10(d2);
+				}
+
+				totalLoss += magErrMethod.Error(k, freqHz, magDbA);
+			}
+
+			return totalLoss;
+		}
+
+		double GetMagResp(const std::vector<double>& params, double freqHz, double sampleRate = 48000.0)
+		{
+			const int expectedNumParams = 1 + 4 * numOrders;
+			//////assert((int)params.size() == expectedNumParams);
+
+			const double gainDb = params[0];
+			const double w = 2.0 * kPi * freqHz / sampleRate;
+
+			double logMagDb = gainDb;
+
+			// zeros
+			for (int i = 0; i < numOrders; ++i)
+			{
+				const int base = 1 + 2 * i;
+				const double zm = params[base + 0];
+				const double zt = params[base + 1];
+
+				const double delta = w - zt;
+				const double d2 = 1.0 + zm * zm - 2.0 * zm * std::cos(delta) + kTiny;
+
+				logMagDb += 10.0 * std::log10(d2);
+			}
+
+			// poles
+			for (int i = 0; i < numOrders; ++i)
+			{
+				const int base = 1 + 2 * numOrders + 2 * i;
+				const double pm = params[base + 0];
+				const double pt = params[base + 1];
+
+				const double delta = w - pt;
+				const double d2 = 1.0 + pm * pm - 2.0 * pm * std::cos(delta) + kTiny;
+
+				logMagDb -= 10.0 * std::log10(d2);
+			}
+
+			// dB -> linear
+			const double magLinear = std::pow(10.0, logMagDb / 20.0);
+			return magLinear;
+		}
+	};
+	class AdamOptimizer // çº¯æ•°å€¼ä¼˜åŒ–å™¨ï¼Œä¸ç”¨å…³å¿ƒå‚æ•°å…·ä½“çš„æ„ä¹‰
 	{
 	private:
 		double bestloss = 1e200;
@@ -313,12 +512,12 @@ namespace AnalyticGradient
 		{
 			const int numParams = (int)nowParams.size();
 
-			// Adam³£ÓÃÄ¬ÈÏÖµ
+			// Adamå¸¸ç”¨é»˜è®¤å€¼
 			const double beta1 = 0.9;
 			const double beta2 = 0.999;
 			const double eps = 1e-8;
 
-			// ¼òµ¥È«¾ÖÌİ¶È²Ã¼ôãĞÖµ£¬¹»±£ÊØ
+			// ç®€å•å…¨å±€æ¢¯åº¦è£å‰ªé˜ˆå€¼ï¼Œå¤Ÿä¿å®ˆ
 			const double gradClipNorm = 10.0;
 
 			std::vector<double> grad(numParams, 0.0);
@@ -335,14 +534,14 @@ namespace AnalyticGradient
 					bestParams = nowParams;
 				}
 
-				// Ìİ¶ÈÓĞÏŞĞÔ´¦Àí
+				// æ¢¯åº¦æœ‰é™æ€§å¤„ç†
 				for (int i = 0; i < numParams; ++i)
 				{
 					if (!std::isfinite(grad[i]))
 						grad[i] = 0.0;
 				}
 
-				// È«¾ÖL2 norm²Ã¼ô£¬·ÀÖ¹Ä³ÂÖÌİ¶È¹ı´óÖ±½ÓÕ¨µô
+				// å…¨å±€L2 normè£å‰ªï¼Œé˜²æ­¢æŸè½®æ¢¯åº¦è¿‡å¤§ç›´æ¥ç‚¸æ‰
 				double gradNorm2 = 0.0;
 				for (int i = 0; i < numParams; ++i)
 					gradNorm2 += grad[i] * grad[i];
@@ -376,6 +575,281 @@ namespace AnalyticGradient
 		}
 	};
 
+	class LbfgsOptimizerLightweight
+	{
+	private:
+		double bestloss = 1e200;
+		double initStep = 1.0;
+		int historySize = 10;
+
+		std::vector<double> bestParams;
+		std::vector<double> nowParams;
+		std::vector<double> nowGrad;
+
+		std::function<double(std::vector<double>&, std::vector<double>&)> updateMethod;
+
+		struct HistPair
+		{
+			std::vector<double> s; // x_{k+1} - x_k
+			std::vector<double> y; // g_{k+1} - g_k
+			double rho = 0.0;      // 1 / (y^T s)
+		};
+
+		std::vector<HistPair> hist;
+
+	private:
+		static double Dot(const std::vector<double>& a, const std::vector<double>& b)
+		{
+			const int n = (int)a.size();
+			double v = 0.0;
+			for (int i = 0; i < n; ++i) v += a[i] * b[i];
+			return v;
+		}
+
+		static double Norm2(const std::vector<double>& a)
+		{
+			return std::sqrt(std::max(0.0, Dot(a, a)));
+		}
+
+		static void AddScaled(std::vector<double>& dst, const std::vector<double>& src, double k)
+		{
+			const int n = (int)dst.size();
+			for (int i = 0; i < n; ++i) dst[i] += src[i] * k;
+		}
+
+		static std::vector<double> Sub(const std::vector<double>& a, const std::vector<double>& b)
+		{
+			const int n = (int)a.size();
+			std::vector<double> out(n);
+			for (int i = 0; i < n; ++i) out[i] = a[i] - b[i];
+			return out;
+		}
+
+		static void Scale(std::vector<double>& a, double k)
+		{
+			for (double& v : a) v *= k;
+		}
+
+		void PushHistory(const std::vector<double>& s, const std::vector<double>& y)
+		{
+			const double ys = Dot(y, s);
+			if (!(ys > 1.0e-20))
+				return;
+
+			HistPair hp;
+			hp.s = s;
+			hp.y = y;
+			hp.rho = 1.0 / ys;
+
+			if ((int)hist.size() >= historySize)
+				hist.erase(hist.begin());
+			hist.push_back(std::move(hp));
+		}
+
+		void ComputeSearchDirection(const std::vector<double>& grad, std::vector<double>& dir) const
+		{
+			const int n = (int)grad.size();
+			dir = grad;
+			for (double& v : dir) v = -v;
+
+			if (hist.empty())
+				return;
+
+			const int m = (int)hist.size();
+			std::vector<double> q = grad;
+			std::vector<double> alpha(m, 0.0);
+
+			for (int i = m - 1; i >= 0; --i)
+			{
+				alpha[i] = hist[i].rho * Dot(hist[i].s, q);
+				AddScaled(q, hist[i].y, -alpha[i]);
+			}
+
+			double gamma = 1.0;
+			{
+				const HistPair& last = hist.back();
+				const double yy = Dot(last.y, last.y);
+				const double ys = Dot(last.y, last.s);
+				if (yy > 1.0e-20)
+					gamma = ys / yy;
+			}
+
+			std::vector<double> r = q;
+			Scale(r, gamma);
+
+			for (int i = 0; i < m; ++i)
+			{
+				const double beta = hist[i].rho * Dot(hist[i].y, r);
+				AddScaled(r, hist[i].s, alpha[i] - beta);
+			}
+
+			dir = r;
+			for (double& v : dir) v = -v;
+		}
+
+	public:
+		void SetupOptimizer(int numParams, std::vector<double> basin, double stepScale = 1.0)
+		{
+			////assert(numParams > 0);
+			////assert((int)basin.size() == numParams);
+
+			bestloss = 1e200;
+			initStep = stepScale;
+
+			nowParams = basin;
+			bestParams = basin;
+			nowGrad.assign(numParams, 0.0);
+			hist.clear();
+		}
+
+		void SetBasin(const std::vector<double>& basin)
+		{
+			nowParams = basin;
+			bestParams = basin;
+			nowGrad.assign(basin.size(), 0.0);
+			hist.clear();
+			bestloss = 1e200;
+		}
+
+		void SetErrorFunc(std::function<double(std::vector<double>&, std::vector<double>&)> fn)
+		{
+			updateMethod = std::move(fn);
+		}
+
+		void GetNowVec(std::vector<float>& out) const
+		{
+			out.resize(nowParams.size());
+			for (size_t i = 0; i < nowParams.size(); ++i) out[i] = (float)nowParams[i];
+		}
+
+		void GetBestVec(std::vector<float>& out) const
+		{
+			out.resize(bestParams.size());
+			for (size_t i = 0; i < bestParams.size(); ++i) out[i] = (float)bestParams[i];
+		}
+
+		void GetNowVec(std::vector<double>& out) const
+		{
+			out = nowParams;
+		}
+
+		void GetBestVec(std::vector<double>& out) const
+		{
+			out = bestParams;
+		}
+
+		double GetBestLoss() const { return bestloss; }
+
+		void RunOptimizer(int numCycles)
+		{
+			////assert(updateMethod);
+			////assert(!nowParams.empty());
+			if (numCycles <= 0) return;
+
+			const int n = (int)nowParams.size();
+			std::vector<double> grad(n, 0.0);
+			double loss = updateMethod(nowParams, grad);
+
+			for (int i = 0; i < n; ++i)
+				if (!std::isfinite(grad[i])) grad[i] = 0.0;
+
+			nowGrad = grad;
+
+			if (std::isfinite(loss) && loss < bestloss)
+			{
+				bestloss = loss;
+				bestParams = nowParams;
+			}
+
+			for (int iter = 0; iter < numCycles; ++iter)
+			{
+				std::vector<double> dir;
+				ComputeSearchDirection(nowGrad, dir);
+
+				double gtd = Dot(nowGrad, dir);
+
+				// å¦‚æœä¸æ˜¯ä¸‹é™æ–¹å‘ï¼Œé€€å›æœ€é€Ÿä¸‹é™
+				if (!(gtd < -1.0e-20))
+				{
+					dir = nowGrad;
+					for (double& v : dir) v = -v;
+					gtd = Dot(nowGrad, dir);
+				}
+
+				const double gradNorm = Norm2(nowGrad);
+				if (!(gradNorm > 1.0e-14))
+					break;
+
+				// ç®€å•å›æº¯ Armijo
+				double step = initStep;
+				const double c1 = 1.0e-4;
+				const double shrink = 0.5;
+				const int maxLineSearch = 20;
+
+				std::vector<double> trialParams(n), trialGrad(n, 0.0);
+				double trialLoss = 1e300;
+				bool accepted = false;
+
+				for (int ls = 0; ls < maxLineSearch; ++ls)
+				{
+					trialParams = nowParams;
+					AddScaled(trialParams, dir, step);
+
+					std::fill(trialGrad.begin(), trialGrad.end(), 0.0);
+					trialLoss = updateMethod(trialParams, trialGrad);
+
+					for (int i = 0; i < n; ++i)
+						if (!std::isfinite(trialGrad[i])) trialGrad[i] = 0.0;
+
+					if (std::isfinite(trialLoss) && trialLoss <= loss + c1 * step * gtd)
+					{
+						accepted = true;
+						break;
+					}
+
+					step *= shrink;
+				}
+
+				if (!accepted)
+				{
+					// çº¿æœç´¢å¤±è´¥æ—¶ï¼Œé€€åŒ–æˆå¾ˆå°ä¸€æ­¥çš„æ¢¯åº¦ä¸‹é™
+					step = 1.0e-3;
+					trialParams = nowParams;
+					AddScaled(trialParams, dir, step);
+
+					std::fill(trialGrad.begin(), trialGrad.end(), 0.0);
+					trialLoss = updateMethod(trialParams, trialGrad);
+
+					for (int i = 0; i < n; ++i)
+						if (!std::isfinite(trialGrad[i])) trialGrad[i] = 0.0;
+
+					if (!std::isfinite(trialLoss))
+						break;
+				}
+
+				std::vector<double> s = Sub(trialParams, nowParams);
+				std::vector<double> y = Sub(trialGrad, nowGrad);
+
+				PushHistory(s, y);
+
+				nowParams = std::move(trialParams);
+				nowGrad = std::move(trialGrad);
+				loss = trialLoss;
+
+				if (std::isfinite(loss) && loss < bestloss)
+				{
+					bestloss = loss;
+					bestParams = nowParams;
+				}
+
+				// å¯¹ä¸‹ä¸€è½®åˆå§‹æ­¥é•¿åšä¸€ä¸ªè½»å¾®è‡ªé€‚åº”
+				if (step < initStep * 0.25)
+					initStep = std::max(1.0e-3, initStep * 0.7);
+				else if (step > initStep * 0.9)
+					initStep = std::min(2.0, initStep * 1.05);
+			}
+		}
+	};
 
 
 
@@ -388,6 +862,7 @@ namespace AnalyticGradient
 		static constexpr int numParams = 1 + 4 * numOrders; // 9
 
 		AdamOptimizer optAdam;
+		LbfgsOptimizerLightweight optLbfgs;
 		AnalogPrototypeFilter prototype;
 		ComplexIIRGradient<numOrders> gradCalc;
 
@@ -399,12 +874,12 @@ namespace AnalyticGradient
 				const double e2 = errDB * errDB;
 				const double e1 = std::abs(errDB);
 
-				// ÕâÀïÑÓĞøÄãÔ­À´µÄ·ç¸ñ
-				const double ev = e1 * 0.001 + e2 * 0.999;
-				const double freqk = freqhz / 48000.0 * 0.5 + 0.5;
+				// è¿™é‡Œå»¶ç»­ä½ åŸæ¥çš„é£æ ¼
+				const double ev = e1 * 0.1 + e2 * 0.9;
+				const double freqk = freqhz / 48000.0 * 0.2 + 0.8;
 
-				// Èç¹ûÒÔºóÄãÏë¼ÌĞøÕÛÌÚÎó²î£¬ÕâÀïÖ±½Ó¸Ä¾ÍĞĞ
-				return ev * freqk + 1.0e-6;
+				// å¦‚æœä»¥åä½ æƒ³ç»§ç»­æŠ˜è…¾è¯¯å·®ï¼Œè¿™é‡Œç›´æ¥æ”¹å°±è¡Œ
+				return ev * freqk;
 			}
 		};
 
@@ -429,6 +904,7 @@ namespace AnalyticGradient
 
 		int totalCycles = 0;
 
+		bool usingLbfgs = false;
 	private:
 		float randNormV()
 		{
@@ -437,7 +913,7 @@ namespace AnalyticGradient
 			return a * b * (std::rand() % 2 ? 1.0f : -1.0f);
 		}
 
-		float spaceTransitionV = 0.5f;
+		float spaceTransitionV = 0.75f;
 		float TransitionSpace(float minv, float maxv, float normx) const
 		{
 			const float logspace = std::exp(std::log(minv) + (std::log(maxv) - std::log(minv)) * normx);
@@ -464,17 +940,17 @@ namespace AnalyticGradient
 			// gainDb
 			coeffs[0] = 0.0f;
 
-			// zeros: ³õÊ¼»¯ÔÚµ¥Î»Ô²ÄÚ²à¸½½üµÄĞ¡·¶Î§
-			coeffs[1] = 0.20f * randNormV();
-			coeffs[2] = 0.20f * randNormV();
-			coeffs[3] = 0.20f * randNormV();
-			coeffs[4] = 0.20f * randNormV();
+			// zeros: åˆå§‹åŒ–åœ¨å•ä½åœ†å†…ä¾§é™„è¿‘çš„å°èŒƒå›´
+			coeffs[1] = 0.90f * randNormV();
+			coeffs[2] = 0.90f * randNormV();
+			coeffs[3] = 0.90f * randNormV();
+			coeffs[4] = 0.90f * randNormV();
 
-			// poles: ¸ü±£ÊØÒ»µã£¬ÏÈ·ÅĞ¡Ò»Ğ©£¬±ÜÃâÒ»ÉÏÀ´±¬Ìİ¶È
-			coeffs[5] = 0.10f * randNormV();
-			coeffs[6] = 0.10f * randNormV();
-			coeffs[7] = 0.10f * randNormV();
-			coeffs[8] = 0.10f * randNormV();
+			// poles: æ›´ä¿å®ˆä¸€ç‚¹ï¼Œå…ˆæ”¾å°ä¸€äº›ï¼Œé¿å…ä¸€ä¸Šæ¥çˆ†æ¢¯åº¦
+			coeffs[5] = 0.90f * randNormV();
+			coeffs[6] = 0.90f * randNormV();
+			coeffs[7] = 0.90f * randNormV();
+			coeffs[8] = 0.90f * randNormV();
 
 			FloatToDouble(coeffs, coeffsD);
 		}
@@ -507,7 +983,8 @@ namespace AnalyticGradient
 
 			SetupInitialParams();
 
-			optAdam.SetupOptimizer(numParams, coeffsD, 0.03); // ³õÖµ¿ÉÔÙµ÷
+			//optAdam.SetupOptimizer(numParams, coeffsD, 0.3); // åˆå€¼å¯å†è°ƒ
+			//optLbfgs.SetupOptimizer(numParams, coeffsD, 0.5);
 			totalCycles = 0;
 		}
 
@@ -538,49 +1015,92 @@ namespace AnalyticGradient
 
 			magErr.SetupMagLinearGlobal(targetMagLinD, freqSpaceD, numPoints);
 
-			// ÖØÖÃÓÅ»¯Æ÷ basin
+			// é‡ç½®ä¼˜åŒ–å™¨ basin
 			SetupInitialParams();
-			optAdam.SetupOptimizer(numParams, coeffsD, 0.03);
+			optAdam.SetupOptimizer(numParams, coeffsD, 0.1);
+			optLbfgs.SetupOptimizer(numParams, coeffsD, 0.9);
+			totalCycles = 0;
+			usingLbfgs = false;
 		}
 
 		void RunOptimizer(int numCycles, int maxCycles) override
 		{
-			if (totalCycles >= maxCycles) return;
+			if (!usingLbfgs)
+			{
+				optAdam.RunOptimizer(numCycles,
+					[this](std::vector<double>& params, std::vector<double>& grad) -> double
+					{
+						return LossAndGrad(params, grad);
+					});
+			}
+			else
+			{
+				optLbfgs.RunOptimizer(numCycles);
+			}
 
-			const int cyclesToRun = std::min(numCycles, maxCycles - totalCycles);
+			totalCycles += numCycles;
 
-			optAdam.RunOptimizer(cyclesToRun,
-				[this](std::vector<double>& params, std::vector<double>& grad) -> double
-				{
-					return LossAndGrad(params, grad);
-				});
-
-			totalCycles += cyclesToRun;
+			if (totalCycles > maxCycles * 10.0 / 100.0 && !usingLbfgs)
+			{
+				usingLbfgs = true;
+				std::vector<double> bestAdam = optAdam.GetBestParams();
+				optLbfgs.SetBasin(bestAdam);
+				optLbfgs.SetErrorFunc(
+					[this](std::vector<double>& params, std::vector<double>& grad) -> double
+					{
+						return LossAndGrad(params, grad);
+					});
+			}
 		}
 
 		void RunOptimizerDirect(int adamCycles = 40, int lbfgsCycles = 160) override
 		{
-			(void)lbfgsCycles; // µ±Ç°°æ±¾Ö»ÅÜ Adam£¬ÏÈ±£Áô½Ó¿Ú¼æÈİ
-
 			optAdam.RunOptimizer(adamCycles,
 				[this](std::vector<double>& params, std::vector<double>& grad) -> double
 				{
 					return LossAndGrad(params, grad);
 				});
 
-			totalCycles += adamCycles;
+			std::vector<double> bestAdam = optAdam.GetBestParams();
+			optLbfgs.SetBasin(bestAdam);
+			optLbfgs.SetErrorFunc(
+				[this](std::vector<double>& params, std::vector<double>& grad) -> double
+				{
+					return LossAndGrad(params, grad);
+				});
+			optLbfgs.RunOptimizer(lbfgsCycles);
+			usingLbfgs = true;
+
+			totalCycles += adamCycles + lbfgsCycles;
 		}
 
 		void GetNowCoeffs(std::vector<float>& outCoeffs) override
 		{
-			const std::vector<double> now = optAdam.GetNowParams();
-			DoubleToFloat(now, outCoeffs);
+			if (usingLbfgs)
+			{
+				std::vector<double> now;
+				optLbfgs.GetNowVec(now);
+				DoubleToFloat(now, outCoeffs);
+			}
+			else
+			{
+				const std::vector<double> now = optAdam.GetNowParams();
+				DoubleToFloat(now, outCoeffs);
+			}
 		}
-
 		void GetBestCoeffs(std::vector<float>& outCoeffs) override
 		{
-			const std::vector<double> best = optAdam.GetBestParams();
-			DoubleToFloat(best, outCoeffs);
+			if (usingLbfgs)
+			{
+				std::vector<double> best;
+				optLbfgs.GetBestVec(best);
+				DoubleToFloat(best, outCoeffs);
+			}
+			else
+			{
+				const std::vector<double> best = optAdam.GetBestParams();
+				DoubleToFloat(best, outCoeffs);
+			}
 		}
 
 		float GetPrototypeResp(float freqhz) override
@@ -590,13 +1110,16 @@ namespace AnalyticGradient
 
 		float GetNowIIRResp(float freqhz) override
 		{
-			const std::vector<double> now = optAdam.GetNowParams();
+			std::vector<double> now;
+			if (usingLbfgs) optLbfgs.GetNowVec(now);
+			else now = optAdam.GetNowParams();
 			return (float)gradCalc.GetMagResp(now, (double)freqhz, 48000.0);
 		}
-
 		float GetBestIIRResp(float freqhz) override
 		{
-			const std::vector<double> best = optAdam.GetBestParams();
+			std::vector<double> best;
+			if (usingLbfgs) optLbfgs.GetBestVec(best);
+			else best = optAdam.GetBestParams();
 			return (float)gradCalc.GetMagResp(best, (double)freqhz, 48000.0);
 		}
 	};

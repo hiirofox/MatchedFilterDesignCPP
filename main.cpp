@@ -349,7 +349,7 @@ static int TestOptimizationHistory()
 	const AnalogFilterType protoType = AnalogFilterType::LP;
 	const float q = 20.07f;
 	const float gain = 12.0f;
-	const float stages = 1.0f;
+	const float stages = 1.5f;
 	design.SetupAnalogPrototype(protoType, 2000, q, gain, stages);
 
 	std::vector<std::vector<float>> historyCoeffs;
